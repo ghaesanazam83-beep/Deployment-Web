@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Zamzzx Deployer Vercel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f0f0f; --text-main: #ffffff; --text-muted: rgba(255, 255, 255, 0.5);
+            --glass-bg: rgba(255, 255, 255, 0.05); --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-highlight: rgba(255, 255, 255, 0.15); --input-bg: rgba(0, 0, 0, 0.3);
+            --nav-bg: rgba(25, 25, 25, 0.8);
+        }
+        body.light-mode {
+            --bg-color: #e5e7eb; --text-main: #111111; --text-muted: rgba(0, 0, 0, 0.5);
+            --glass-bg: rgba(255, 255, 255, 0.6); --glass-border: rgba(255, 255, 255, 0.9);
+            --glass-highlight: rgba(255, 255, 255, 1); --input-bg: rgba(255, 255, 255, 0.7);
+            --nav-bg: rgba(255, 255, 255, 0.8);
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-main);
+            padding-bottom: 100px; -webkit-tap-highlight-color: transparent; transition: background-color 0.4s ease, color 0.4s ease; overflow-x: hidden; }
+        .glass-panel { background: var(--glass-bg); backdrop-filter: blur(24px) saturate(150%);
+            -webkit-backdrop-filter: blur(24px) saturate(150%); border: 1px solid var(--glass-border);
+            box-shadow: inset 0 1px 1px var(--glass-highlight), 0 8px 32px rgba(0, 0, 0, 0.15);
+            border-radius: 1.5rem; transition: background 0.4s ease, border-color 0.4s ease; }
+        .glass-input { background: var(--input-bg); border: 1px solid var(--glass-border);
+            border-radius: 9999px; padding: 0.85rem 1.2rem; color: var(--text-main); width: 100%; transition: all 0.3s ease; }
+        .glass-input:focus { outline: none; border-color: var(--text-muted); background: var(--glass-bg); }
+        .glass-input::placeholder { color: var(--text-muted); }
+        .orb { position: fixed; border-radius: 50%; filter: blur(90px); z-index: -1; opacity: 0.8; transition: opacity 0.4s ease; }
+        body.light-mode .orb { opacity: 0.5; }
+        .view-section { display: none; animation: fadeIn 0.4s ease-out; }
+        .view-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .file-list-container::-webkit-scrollbar { width: 4px; }
+        .file-list-container::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 4px; }
+        @keyframes spin-slow { 100% { transform: rotate(360deg); } }
+        .animate-spin-slow { animation: spin-slow 3s linear infinite; }
+        .zip-badge { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+        .warn-badge { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    </style>
+</head>
+<body class="antialiased min-h-screen relative">
+
+    <div class="orb w-72 h-72 bg-gray-400 top-[-5%] left-[-10%]"></div>
+    <div class="orb w-80 h-80 bg-gray-600 top-[30%] right-[-20%]"></div>
+    <div class="orb w-72 h-72 bg-gray-500 bottom-[10%] left-[-10%]"></div>
+
+    <!-- MODAL DEPLOY -->
+    <div id="deployModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] hidden items-center justify-center p-4">
+        <div class="glass-panel p-8 w-full max-w-sm flex flex-col items-center text-center relative overflow-hidden">
+            <div class="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10 relative">
+                <div id="spinnerRing" class="absolute inset-0 border-t-2 border-white/40 rounded-full animate-spin-slow"></div>
+                <i data-lucide="rocket" class="text-white" size="32"></i>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2" id="deployStatusText">Memulai Proses...</h3>
+            <p class="text-xs text-white/50 mb-6 h-8 px-2" id="deploySubText">Harap tunggu sebentar</p>
+            <div class="w-full h-2 bg-black/40 rounded-full overflow-hidden mb-2 border border-white/10">
+                <div id="deployProgressBar" class="h-full bg-white transition-all duration-500 w-0 rounded-full"></div>
+            </div>
+            <div class="flex justify-between w-full text-[10px] text-white/40 font-mono">
+                <span id="deployPercentText">0%</span>
+                <span id="deployStepText">Menyiapkan...</span>
+            </div>
+            <div id="resultBox" class="hidden w-full mt-5 p-3 bg-black/40 rounded-2xl border border-white/10">
+                <p class="text-[10px] text-white/40 mb-1">Website Anda sekarang live di:</p>
+                <a id="resultLink" href="#" target="_blank" class="text-emerald-400 text-xs font-mono break-all hover:underline"></a>
+            </div>
+            <button id="closeModalBtn" onclick="closeDeployModal()" class="hidden mt-5 w-full py-3 rounded-full bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/20">
+                Tutup
+            </button>
+        </div>
+    </div>
+
+    <main class="max-w-md mx-auto px-5 pt-10 relative z-10">
+
+        <!-- HOME -->
+        <div id="home-view" class="view-section active space-y-6">
+            <div class="flex items-center gap-4 mb-8">
+                <div class="w-14 h-14 glass-panel flex items-center justify-center rounded-2xl">
+                    <i data-lucide="rocket" class="text-current" size="24"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">Zamzzx Deployer Vercel</h1>
+                    <p class="text-sm text-[var(--text-muted)]">Vercel Deployer • Liquid Glass</p>
+                </div>
+            </div>
+
+            <!-- TOKEN -->
+            <div class="glass-panel p-6 space-y-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-start gap-3">
+                        <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                            <i data-lucide="key" size="18" class="text-current opacity-70"></i>
+                        </div>
+                        <div>
+                            <h2 class="font-medium text-[15px]">Token Vercel</h2>
+                            <p class="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">Tersimpan hanya di perangkatmu.</p>
+                        </div>
+                    </div>
+                    <span id="tokenStatusBadge" class="text-[10px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-white/40">Belum diisi</span>
+                </div>
+                <div class="relative flex items-center">
+                    <input type="password" id="tokenInput" placeholder="Tempel token Vercel di sini..." class="glass-input pr-20 text-sm">
+                    <div class="absolute right-3 flex items-center gap-2">
+                        <button id="clearTokenBtn" class="text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors hidden" title="Hapus Token">
+                            <i data-lucide="x" size="18"></i>
+                        </button>
+                        <button onclick="toggleToken()" class="text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
+                            <i data-lucide="eye" id="eyeIcon" size="18"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between text-[11px]">
+                    <span class="flex items-center gap-1.5 text-[var(--text-muted)] font-medium">
+                        <i data-lucide="check-circle" size="14"></i> Aman — dipakai hanya untuk deploy akunmu
+                    </span>
+                    <a href="https://vercel.com/account/tokens" target="_blank" class="text-[var(--text-muted)] underline hover:text-[var(--text-main)] transition-colors">Dapatkan token</a>
+                </div>
+            </div>
+
+            <!-- FILE -->
+            <div class="glass-panel p-6 space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                        <i data-lucide="file-code-2" size="18" class="text-current opacity-70"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-medium text-[15px]">File Website</h2>
+                        <p class="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                            Upload <strong class="text-amber-400">ZIP</strong>, folder, atau file individual. ZIP diekstrak otomatis. 
+                            <strong class="text-white/70">Maksimal 300 MB</strong>.
+                        </p>
+                    </div>
+                </div>
+                <div id="dropZone" class="border border-dashed border-[var(--glass-border)] rounded-3xl p-8 flex flex-col items-center justify-center text-center hover:bg-[var(--glass-bg)] transition-all cursor-pointer group">
+                    <i data-lucide="cloud-upload" size="32" class="text-[var(--text-muted)] mb-3 group-hover:text-[var(--text-main)] transition-colors"></i>
+                    <p class="text-sm font-medium">Klik atau tarik file ke sini</p>
+                    <p class="text-[11px] text-[var(--text-muted)] mt-1">.zip / folder / file — total maks 300 MB</p>
+                    <input type="file" multiple accept=".zip" class="hidden" id="zipInput">
+                    <input type="file" multiple class="hidden" id="fileInput" webkitdirectory>
+                    <input type="file" multiple class="hidden" id="fileInputFiles">
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('zipInput').click()" class="flex-1 text-[11px] py-2 rounded-full zip-badge text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5">
+                        <i data-lucide="file-archive" size="12"></i> Upload ZIP
+                    </button>
+                    <button onclick="document.getElementById('fileInputFiles').click()" class="flex-1 text-[11px] py-2 rounded-full bg-[var(--input-bg)] border border-[var(--glass-border)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">Pilih File</button>
+                    <button onclick="document.getElementById('fileInput').click()" class="flex-1 text-[11px] py-2 rounded-full bg-[var(--input-bg)] border border-[var(--glass-border)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">Folder</button>
+                </div>
+                <div id="sizeWarning" class="hidden text-[10px] p-2 rounded-xl warn-badge flex items-center gap-2">
+                    <i data-lucide="alert-triangle" size="12"></i>
+                    <span id="sizeWarningText"></span>
+                </div>
+                <div id="fileList" class="file-list-container space-y-2 max-h-40 overflow-y-auto mt-2"></div>
+            </div>
+
+            <!-- LINK & FAVICON -->
+            <div class="glass-panel p-6 space-y-5">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                        <i data-lucide="link" size="18" class="text-current opacity-70"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-medium text-[15px]">Nama Link & Ikon</h2>
+                        <p class="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">Favicon otomatis dipasang ke &lt;head&gt; file HTML.</p>
+                    </div>
+                </div>
+                <div class="flex items-center bg-[var(--input-bg)] border border-[var(--glass-border)] rounded-full px-4 py-3 focus-within:border-[var(--text-muted)] transition-colors">
+                    <span class="text-[var(--text-muted)] text-sm">https://</span>
+                    <input type="text" id="subdomainInput" placeholder="nama-web" class="bg-transparent border-none text-current focus:outline-none flex-1 mx-1 text-sm placeholder-[var(--text-muted)] w-full">
+                    <span class="text-[var(--text-muted)] text-sm">.vercel.app</span>
+                </div>
+                <p class="text-[11px] text-[var(--text-muted)] flex items-center gap-1.5">
+                    <i data-lucide="link-2" size="12"></i> contoh: https://portofolio-ku.vercel.app
+                </p>
+                <div class="flex items-center gap-4 mt-2">
+                    <div id="faviconDropZone" onclick="document.getElementById('faviconInput').click()" class="w-14 h-14 border border-dashed border-[var(--glass-border)] rounded-2xl flex items-center justify-center hover:bg-[var(--glass-bg)] transition-colors cursor-pointer">
+                        <i data-lucide="image-plus" id="faviconIcon" size="20" class="text-[var(--text-muted)]"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium">Ikon Web (Favicon)</span>
+                            <span class="text-[10px] bg-[var(--input-bg)] border border-[var(--glass-border)] px-2 py-0.5 rounded-full text-[var(--text-muted)]">Opsional</span>
+                        </div>
+                        <p class="text-[11px] text-[var(--text-muted)] mt-1">PNG / JPG / SVG — otomatis ke &lt;head&gt;</p>
+                    </div>
+                    <input type="file" id="faviconInput" accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml" class="hidden">
+                </div>
+            </div>
+
+            <button id="deployBtn" onclick="startDeploy()" class="w-full glass-panel bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] active:scale-[0.98] transition-all py-4 rounded-full flex items-center justify-center gap-2 font-medium mt-8 shadow-lg">
+                <i data-lucide="rocket" size="18"></i> Generate & Deploy
+            </button>
+        </div>
+
+        <!-- HISTORY -->
+        <div id="history-view" class="view-section space-y-6">
+            <div class="mb-6">
+                <h1 class="text-2xl font-bold mb-1 tracking-tight">History Deploy</h1>
+                <p class="text-sm text-[var(--text-muted)]">Tersimpan lokal di perangkatmu</p>
+            </div>
+            <div id="historyEmpty" class="glass-panel p-10 flex flex-col items-center justify-center text-center min-h-[350px]">
+                <div class="w-16 h-16 bg-[var(--input-bg)] border border-[var(--glass-border)] rounded-3xl flex items-center justify-center mb-6">
+                    <i data-lucide="history" size="28" class="text-[var(--text-muted)]"></i>
+                </div>
+                <h2 class="text-[17px] font-medium mb-2">Belum ada riwayat deploy</h2>
+                <p class="text-[13px] text-[var(--text-muted)] max-w-[250px] leading-relaxed">Website yang berhasil kamu deploy akan muncul di sini.</p>
+            </div>
+            <div id="historyList" class="space-y-3"></div>
+        </div>
+
+        <!-- THEME -->
+        <div id="theme-view" class="view-section space-y-6">
+            <div class="glass-panel p-6 space-y-5">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                        <i data-lucide="sun-moon" size="18" class="text-current opacity-70"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-medium text-[15px]">Tampilan</h2>
+                        <p id="theme-desc" class="text-xs text-[var(--text-muted)] mt-1">Mode gelap aktif — kaca abu-abu pekat.</p>
+                    </div>
+                </div>
+                <div class="bg-[var(--input-bg)] p-1 rounded-full flex border border-[var(--glass-border)] relative">
+                    <button id="btn-gelap" onclick="setTheme(false)" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-sm font-medium transition-all duration-300 bg-[var(--glass-bg)] shadow-sm">
+                        <i data-lucide="moon" size="16"></i> Gelap
+                    </button>
+                    <button id="btn-terang" onclick="setTheme(true)" class="flex-1 flex items-center justify-center gap-2 py-3 rounded-full text-[var(--text-muted)] text-sm font-medium transition-all duration-300 hover:text-[var(--text-main)]">
+                        <i data-lucide="sun" size="16"></i> Terang
+                    </button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 space-y-5">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                        <i data-lucide="headphones" size="18" class="text-current opacity-70"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-medium text-[15px]">Support</h2>
+                        <p class="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">Ikuti untuk update, tutorial, dan bantuan.</p>
+                    </div>
+                </div>
+                <div class="space-y-3 mt-4">
+                    <a href="https://whatsapp.com/channel/XXXXXX" target="_blank" class="flex items-center gap-4 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl hover:bg-emerald-500/20 transition-colors">
+                        <i data-lucide="message-circle" size="20" class="text-emerald-400"></i>
+                        <div>
+                            <p class="text-sm font-medium text-emerald-50">Saluran WhatsApp</p>
+                            <p class="text-[11px] text-emerald-200/60 mt-0.5">Join channel untuk info & update</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 space-y-5">
+                <div class="flex items-start gap-3">
+                    <div class="p-2.5 bg-[var(--input-bg)] rounded-full mt-1 border border-[var(--glass-border)]">
+                        <i data-lucide="info" size="18" class="text-current opacity-70"></i>
+                    </div>
+                    <div><h2 class="font-medium text-[15px]">Tentang</h2></div>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-2">
+                    <span class="text-[10px] bg-[var(--input-bg)] border border-[var(--glass-border)] px-3 py-1.5 rounded-full">Zamzzx Deployer</span>
+                    <span class="text-[10px] bg-[var(--input-bg)] border border-[var(--glass-border)] px-3 py-1.5 rounded-full">v3.3.1</span>
+                    <span class="text-[10px] bg-[var(--input-bg)] border border-[var(--glass-border)] px-3 py-1.5 rounded-full">Node.js Backend</span>
+                </div>
+                <p class="text-[12px] text-[var(--text-muted)] leading-relaxed mt-2">
+                    Deploy website statis ke akun Vercel milikmu langsung dari browser. Upload file besar didukung melalui backend Node.js.
+                </p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- NAV -->
+    <div class="fixed bottom-6 left-0 right-0 flex justify-center z-50 px-4">
+        <div class="glass-panel flex items-center p-1.5 gap-1.5 rounded-full shadow-2xl" style="background: var(--nav-bg);">
+            <button onclick="switchTab('home-view', this)" class="nav-btn active flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--glass-bg)] shadow-sm font-medium transition-all duration-300">
+                <i data-lucide="home" size="18"></i> <span class="text-sm">Home</span>
+            </button>
+            <button onclick="switchTab('history-view', this)" class="nav-btn flex items-center gap-2 px-5 py-3 rounded-full text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all duration-300">
+                <i data-lucide="history" size="18"></i> <span class="text-sm hidden sm:block">History</span>
+            </button>
+            <button onclick="switchTab('theme-view', this)" class="nav-btn flex items-center gap-2 px-5 py-3 rounded-full text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all duration-300">
+                <i data-lucide="sun-moon" size="18"></i> <span class="text-sm hidden sm:block">Theme</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const MAX_TOTAL_SIZE_MB = 300;
+        const WARN_TOTAL_SIZE_MB = 100;
+
+        function switchTab(viewId, btnElement) {
+            document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-[var(--glass-bg)]', 'shadow-sm', 'font-medium');
+                btn.classList.add('text-[var(--text-muted)]');
+            });
+            btnElement.classList.remove('text-[var(--text-muted)]');
+            btnElement.classList.add('bg-[var(--glass-bg)]', 'shadow-sm', 'font-medium');
+            if (viewId === 'history-view') renderHistory();
+        }
+
+        function toggleToken() {
+            const input = document.getElementById('tokenInput');
+            const icon = document.getElementById('eyeIcon');
+            input.type = input.type === 'password' ? 'text' : 'password';
+            icon.setAttribute('data-lucide', input.type === 'password' ? 'eye' : 'eye-off');
+            lucide.createIcons();
+        }
+        const tokenInput = document.getElementById('tokenInput');
+        const clearTokenBtn = document.getElementById('clearTokenBtn');
+        const tokenStatusBadge = document.getElementById('tokenStatusBadge');
+        function checkTokenStatus() {
+            if (tokenInput.value.trim() !== '') {
+                tokenStatusBadge.innerText = 'Aktif';
+                tokenStatusBadge.classList.remove('bg-white/5', 'text-white/40');
+                tokenStatusBadge.classList.add('bg-white/15', 'text-white', 'border-white/30');
+                clearTokenBtn.classList.remove('hidden');
+            } else {
+                tokenStatusBadge.innerText = 'Belum diisi';
+                tokenStatusBadge.classList.add('bg-white/5', 'text-white/40');
+                tokenStatusBadge.classList.remove('bg-white/15', 'text-white', 'border-white/30');
+                clearTokenBtn.classList.add('hidden');
+            }
+        }
+        const savedToken = localStorage.getItem('zamzzx_vercel_token');
+        if (savedToken) tokenInput.value = savedToken;
+        checkTokenStatus();
+        tokenInput.addEventListener('input', (e) => {
+            if (e.target.value.trim() !== '') localStorage.setItem('zamzzx_vercel_token', e.target.value);
+            else localStorage.removeItem('zamzzx_vercel_token');
+            checkTokenStatus();
+        });
+        clearTokenBtn.addEventListener('click', () => {
+            tokenInput.value = '';
+            localStorage.removeItem('zamzzx_vercel_token');
+            checkTokenStatus();
+        });
+
+        function setTheme(isLight) {
+            const body = document.body;
+            const btnGelap = document.getElementById('btn-gelap');
+            const btnTerang = document.getElementById('btn-terang');
+            const themeDesc = document.getElementById('theme-desc');
+            if (isLight) {
+                body.classList.add('light-mode');
+                btnTerang.classList.add('bg-white', 'text-black', 'shadow-sm');
+                btnTerang.classList.remove('text-[var(--text-muted)]');
+                btnGelap.classList.remove('bg-[var(--glass-bg)]', 'shadow-sm');
+                btnGelap.classList.add('text-[var(--text-muted)]');
+                themeDesc.innerText = 'Mode terang aktif — kaca putih transparan.';
+            } else {
+                body.classList.remove('light-mode');
+                btnGelap.classList.add('bg-[var(--glass-bg)]', 'shadow-sm');
+                btnGelap.classList.remove('text-[var(--text-muted)]');
+                btnTerang.classList.remove('bg-white', 'text-black', 'shadow-sm');
+                btnTerang.classList.add('text-[var(--text-muted)]');
+                themeDesc.innerText = 'Mode gelap aktif — kaca abu-abu pekat.';
+            }
+            lucide.createIcons();
+        }
+
+        const dropZone = document.getElementById('dropZone');
+        const zipInput = document.getElementById('zipInput');
+        const fileInput = document.getElementById('fileInput');
+        const fileInputFiles = document.getElementById('fileInputFiles');
+        const fileList = document.getElementById('fileList');
+        const sizeWarning = document.getElementById('sizeWarning');
+        const sizeWarningText = document.getElementById('sizeWarningText');
+        let selectedFiles = [];
+
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            fileInputFiles.click();
+        });
+
+        [fileInput, fileInputFiles, zipInput].forEach(input => {
+            input.addEventListener('change', (e) => {
+                selectedFiles = Array.from(e.target.files);
+                validateAndShowFiles();
+            });
+        });
+
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-[var(--glass-border)]'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('bg-[var(--glass-border)]'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-[var(--glass-border)]');
+            selectedFiles = Array.from(e.dataTransfer.files);
+            validateAndShowFiles();
+        });
+
+        function getTotalSizeMB(files) {
+            return files.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024);
+        }
+
+        function validateAndShowFiles() {
+            const totalMB = getTotalSizeMB(selectedFiles);
+            sizeWarning.classList.add('hidden');
+            if (totalMB > MAX_TOTAL_SIZE_MB) {
+                sizeWarning.classList.remove('hidden');
+                sizeWarningText.innerText = `Total file ${totalMB.toFixed(2)} MB melebihi batas ${MAX_TOTAL_SIZE_MB} MB.`;
+            } else if (totalMB > WARN_TOTAL_SIZE_MB) {
+                sizeWarning.classList.remove('hidden');
+                sizeWarningText.innerText = `Ukuran total ${totalMB.toFixed(2)} MB cukup besar. Deploy mungkin memakan waktu.`;
+            }
+            updateFileList(selectedFiles);
+        }
+
+        function updateFileList(files) {
+            fileList.innerHTML = '';
+            if (files.length > 0) {
+                const totalMB = getTotalSizeMB(files);
+                const summary = document.createElement('div');
+                summary.className = 'flex items-center justify-between text-[10px] text-white/40 px-1 mb-1';
+                const isZip = files.length === 1 && files[0].name.toLowerCase().endsWith('.zip');
+                summary.innerHTML = `<span>${isZip ? '📦 ZIP terdeteksi' : files.length + ' file dipilih'}</span><span>Total: ${totalMB.toFixed(2)} MB / ${MAX_TOTAL_SIZE_MB} MB</span>`;
+                fileList.appendChild(summary);
+                files.slice(0, 50).forEach(file => {
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                    const isZipFile = file.name.toLowerCase().endsWith('.zip');
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between text-xs text-[var(--text-muted)] bg-[var(--input-bg)] border border-[var(--glass-border)] p-3 rounded-xl';
+                    div.innerHTML = `<span class="truncate max-w-[200px] font-medium ${isZipFile ? 'text-amber-400' : 'text-white'} flex items-center gap-1.5">${isZipFile ? '📦' : ''}${file.webkitRelativePath || file.name}</span> <span class="text-[10px] bg-[var(--glass-bg)] px-2 py-1 rounded-md">${sizeMB} MB</span>`;
+                    fileList.appendChild(div);
+                });
+                if (files.length > 50) {
+                    const more = document.createElement('p');
+                    more.className = 'text-[10px] text-white/40 text-center py-2';
+                    more.innerText = `... dan ${files.length - 50} file lainnya`;
+                    fileList.appendChild(more);
+                }
+            }
+        }
+
+        let faviconFile = null;
+        document.getElementById('faviconInput').addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                faviconFile = this.files[0];
+                const icon = document.getElementById('faviconIcon');
+                icon.setAttribute('data-lucide', 'check-circle');
+                icon.classList.remove('text-[var(--text-muted)]');
+                icon.classList.add('text-white');
+                lucide.createIcons();
+            }
+        });
+
+        async function extractZip(zipFile, onProgress) {
+            const zip = await JSZip.loadAsync(zipFile);
+            const entries = [];
+            const promises = [];
+            let count = 0;
+            zip.forEach((relativePath, zipEntry) => {
+                if (zipEntry.dir) return;
+                count++;
+                const p = zipEntry.async('blob').then(blob => {
+                    const baseName = relativePath.split('/').pop();
+                    const file = new File([blob], baseName, { type: 'application/octet-stream' });
+                    Object.defineProperty(file, 'customPath', { value: relativePath, writable: true });
+                    entries.push(file);
+                    if (onProgress) onProgress(entries.length, count);
+                });
+                promises.push(p);
+            });
+            await Promise.all(promises);
+            return entries;
+        }
+
+        function getCommonPrefix(files) {
+            if (files.length === 0) return '';
+            const paths = files.map(f => f.customPath || f.webkitRelativePath || f.name);
+            if (!paths[0].includes('/')) return '';
+            const parts = paths[0].split('/');
+            let prefix = '';
+            for (let i = 0; i < parts.length - 1; i++) {
+                const test = prefix + parts[i] + '/';
+                if (paths.every(p => p.startsWith(test))) prefix = test;
+                else break;
+            }
+            return prefix;
+        }
+
+        const deployModal = document.getElementById('deployModal');
+        const deployStatusText = document.getElementById('deployStatusText');
+        const deploySubText = document.getElementById('deploySubText');
+        const deployProgressBar = document.getElementById('deployProgressBar');
+        const deployPercentText = document.getElementById('deployPercentText');
+        const deployStepText = document.getElementById('deployStepText');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const resultBox = document.getElementById('resultBox');
+        const resultLink = document.getElementById('resultLink');
+        const spinnerRing = document.getElementById('spinnerRing');
+
+        function updateProgress(percent, status, subtext, stepLabel) {
+            deployProgressBar.style.width = percent + '%';
+            deployPercentText.innerText = percent + '%';
+            if (status) deployStatusText.innerText = status;
+            if (subtext) deploySubText.innerText = subtext;
+            if (stepLabel) deployStepText.innerText = stepLabel;
+        }
+
+        async function startDeploy() {
+            const token = localStorage.getItem('zamzzx_vercel_token');
+            const subdomain = document.getElementById('subdomainInput').value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            let files = selectedFiles;
+
+            if (!token) { alert('Token Vercel belum diisi!'); return; }
+            if (!subdomain) { alert('Nama subdomain belum diisi!'); return; }
+            if (files.length === 0) { alert('Pilih file website terlebih dahulu!'); return; }
+
+            const totalMB = getTotalSizeMB(files);
+            if (totalMB > MAX_TOTAL_SIZE_MB) {
+                alert(`Total file ${totalMB.toFixed(2)} MB melebihi batas ${MAX_TOTAL_SIZE_MB} MB.`);
+                return;
+            }
+
+            deployModal.classList.remove('hidden');
+            deployModal.classList.add('flex');
+            closeModalBtn.classList.add('hidden');
+            resultBox.classList.add('hidden');
+            spinnerRing.style.display = 'block';
+            deployProgressBar.classList.remove('bg-emerald-500', 'bg-red-500');
+            deployProgressBar.classList.add('bg-white');
+            updateProgress(0, 'Memulai Proses...', 'Menyiapkan data', 'Menyiapkan...');
+
+            try {
+                const isSingleZip = files.length === 1 && files[0].name.toLowerCase().endsWith('.zip');
+                if (isSingleZip) {
+                    updateProgress(5, 'Mengekstrak ZIP...', 'Membaca isi arsip', 'Extracting');
+                    files = await extractZip(files[0], (done, total) => {
+                        const pct = 5 + Math.floor((done / total) * 15);
+                        updateProgress(pct, 'Mengekstrak ZIP...', `${done}/${total} file`, 'Extracting');
+                    });
+                    updateProgress(20, 'Ekstrak selesai', `${files.length} file siap`, 'Extracted');
+                }
+
+                const prefix = getCommonPrefix(files);
+
+                const formData = new FormData();
+                formData.append('token', token);
+                formData.append('subdomain', subdomain);
+
+                let sentCount = 0;
+                for (const file of files) {
+                    let path = file.customPath || file.webkitRelativePath || file.name;
+                    if (prefix && path.startsWith(prefix)) path = path.substring(prefix.length);
+                    if (path.startsWith('/')) path = path.substring(1);
+                    formData.append('files', file, path);
+                    sentCount++;
+                    const pct = 25 + Math.floor((sentCount / files.length) * 10);
+                    updateProgress(pct, 'Menyiapkan file...', `${sentCount}/${files.length}`, 'Preparing');
+                }
+
+                if (faviconFile) {
+                    formData.append('favicon', faviconFile, faviconFile.name);
+                }
+
+                updateProgress(40, 'Mengunggah ke server...', `${files.length} file sedang diproses`, 'Uploading');
+                
+                let uploadProgress = 40;
+                const uploadInterval = setInterval(() => {
+                    if (uploadProgress < 88) {
+                        uploadProgress += 2;
+                        updateProgress(uploadProgress, 'Memproses di server...', 'Server sedang upload ke Vercel', 'Processing');
+                    }
+                }, 700);
+
+                const response = await fetch('/api/deploy', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(uploadInterval);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Gagal deploy.');
+                }
+
+                updateProgress(100, 'Deploy Berhasil! 🎉', 'Website sudah live', 'Success');
+                deployProgressBar.classList.remove('bg-white');
+                deployProgressBar.classList.add('bg-emerald-500');
+                spinnerRing.style.display = 'none';
+                closeModalBtn.classList.remove('hidden');
+                resultBox.classList.remove('hidden');
+                resultLink.href = result.url;
+                resultLink.innerText = result.url;
+
+                saveToHistory({
+                    url: result.url,
+                    name: subdomain,
+                    date: new Date().toLocaleString('id-ID'),
+                    files: files.length + (faviconFile ? 1 : 0)
+                });
+
+            } catch (error) {
+                console.error(error);
+                updateProgress(100, 'Deploy Gagal ❌', error.message, 'Error');
+                deployProgressBar.classList.remove('bg-white');
+                deployProgressBar.classList.add('bg-red-500');
+                spinnerRing.style.display = 'none';
+                closeModalBtn.classList.remove('hidden');
+            }
+        }
+
+        function closeDeployModal() {
+            deployModal.classList.add('hidden');
+            deployModal.classList.remove('flex');
+        }
+
+        function saveToHistory(data) {
+            let history = JSON.parse(localStorage.getItem('zamzzx_deploy_history') || '[]');
+            history.unshift(data);
+            if (history.length > 20) history = history.slice(0, 20);
+            localStorage.setItem('zamzzx_deploy_history', JSON.stringify(history));
+        }
+
+        function renderHistory() {
+            const history = JSON.parse(localStorage.getItem('zamzzx_deploy_history') || '[]');
+            const historyEmpty = document.getElementById('historyEmpty');
+            const historyList = document.getElementById('historyList');
+            if (history.length === 0) {
+                historyEmpty.style.display = 'flex';
+                historyList.innerHTML = '';
+                return;
+            }
+            historyEmpty.style.display = 'none';
+            historyList.innerHTML = '';
+            history.forEach(item => {
+                const div = document.createElement('a');
+                div.href = item.url;
+                div.target = '_blank';
+                div.className = 'glass-panel p-4 flex items-center justify-between hover:bg-[var(--glass-border)] transition-colors block';
+                div.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-10 h-10 bg-[var(--input-bg)] border border-[var(--glass-border)] rounded-xl flex items-center justify-center shrink-0">
+                            <i data-lucide="globe" size="16" class="text-current opacity-70"></i>
+                        </div>
+                        <div class="overflow-hidden">
+                            <p class="text-sm font-medium truncate">${item.name}</p>
+                            <p class="text-[10px] text-[var(--text-muted)] mt-0.5">${item.date} • ${item.files} file</p>
+                        </div>
+                    </div>
+                    <i data-lucide="external-link" size="16" class="text-[var(--text-muted)] shrink-0 ml-2"></i>
+                `;
+                historyList.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
