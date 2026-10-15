@@ -1,27 +1,22 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve file statis dari folder yang sama dengan server.js
 app.use(express.static(__dirname));
 
-// Halaman utama → kirim index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Multer: simpan file di memori
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500 MB per file
+  limits: { fileSize: 500 * 1024 * 1024 }
 });
 
-// Helper: strip common prefix folder (misal "my-website/")
 function stripCommonPrefix(paths) {
   if (paths.length === 0) return paths;
   if (!paths[0].includes('/')) return paths;
@@ -35,7 +30,6 @@ function stripCommonPrefix(paths) {
   return paths.map(p => p.substring(prefix.length));
 }
 
-// Helper: upload file ke Vercel Files API → dapat SHA
 async function uploadFileToVercel(token, filename, buffer) {
   const sha = crypto.createHash('sha1').update(buffer).digest('hex');
   const res = await fetch('https://api.vercel.com/v2/files', {
@@ -55,7 +49,6 @@ async function uploadFileToVercel(token, filename, buffer) {
   return await res.json();
 }
 
-// ================== ENDPOINT DEPLOY ==================
 app.post('/api/deploy', upload.any(), async (req, res) => {
   const { token, subdomain } = req.body;
   let files = req.files || [];
@@ -73,7 +66,6 @@ app.post('/api/deploy', upload.any(), async (req, res) => {
     const paths = files.map(f => f.originalname);
     const strippedPaths = stripCommonPrefix(paths);
 
-    // ============ SISIPKAN FAVICON KE <head> ============
     if (favicon) {
       const ext = path.extname(favicon.originalname).toLowerCase();
       const mimeMap = {
@@ -104,9 +96,7 @@ app.post('/api/deploy', upload.any(), async (req, res) => {
       files.push({ originalname: faviconName, buffer: favicon.buffer });
       strippedPaths.push(faviconName);
     }
-    // ====================================================
 
-    // ============ UPLOAD TIAP FILE KE VERCEL ============
     console.log(`Uploading ${files.length} files to Vercel...`);
     const fileRefs = [];
 
@@ -125,7 +115,6 @@ app.post('/api/deploy', upload.any(), async (req, res) => {
       console.log(`  [${i + 1}/${files.length}] ${filePath} (${f.buffer.length} bytes)`);
     }
 
-    // ============ BUAT DEPLOYMENT ============
     console.log('Creating deployment...');
     const deployRes = await fetch('https://api.vercel.com/v13/deployments', {
       method: 'POST',
